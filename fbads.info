@@ -1,0 +1,4 @@
+name = Facebook Ads
+description = Facebook Ads controls.
+core = 7.x
+package = Facebook Ads
