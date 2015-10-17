@@ -129,6 +129,12 @@ function fbads_menu() {
         'type' => MENU_CALLBACK
     );
 	
+    $items['fbads/localesresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_localesresults',
+        'type' => MENU_CALLBACK
+    );
+		
     $items['fbads/educationresults'] = array(
         'access arguments' => array('access fbads'),
         'page callback' => '_fbads_educationresults',
@@ -359,6 +365,21 @@ function fbads_target_form($form,&$form_state){
   									'travel_in' => array('title' => 'People whose most recent location is the selected area, as determined by information from their mobile device, and are more than 100 miles away from their stated current city from their Facebook profiles.')),
   );
   
+  
+  $form['locales_set'] = array(
+  	'#title' => t('Locales'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+    
+  $form['locales_set']['locales'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Locales'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/localesresults',
+  );
+  
   $form['gender_age_set'] = array(
   	'#title' => t('Gender & Age'),
   	'#type' => 'fieldset',
@@ -384,6 +405,7 @@ function fbads_target_form($form,&$form_state){
   	'#description' => t('13 - 65'),
   );
   
+
   $form['interest_set'] = array(
   	'#title' => t('Interests'),
   	'#type' => 'fieldset',
@@ -890,6 +912,22 @@ function _fbads_zipresults($string){
 			$city = $results->getObjects()[$i]->region;
 		}
 		$matches[$results->getObjects()[$i]->key] = check_plain($results->getObjects()[$i]->country_code . "-" . $results->getObjects()[$i]->name . " " . $city);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_localesresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::LOCALE,
+	  $class = null,
+	  $query = $string
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
 	}
 
 	drupal_json_output($matches);
