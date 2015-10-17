@@ -14,11 +14,21 @@
 	
 	use FacebookAds\Api;
 	
+	// Accounts
 	use FacebookAds\Object\AdUser;
 	use FacebookAds\Object\Fields\AdUserFields;
 	use FacebookAds\Object\AdAccount;
 	use FacebookAds\Object\Fields\AdAccountFields;	
 
+	// Campaigns
+	use FacebookAds\Object\Campaign;
+	use FacebookAds\Object\Fields\CampaignFields;
+	use FacebookAds\Object\Values\AdObjectives;
+	use FacebookAds\Object\Values\AdBuyingTypes;
+
+	// Targeting
+	use FacebookAds\Object\TargetingSearch;
+	use FacebookAds\Object\Search\TargetingSearchTypes;
 
 function fbads_print_pre($p,$titel="") {
 	if ($titel<>"") {print $titel . ": ";} 
@@ -29,18 +39,18 @@ function fbads_print_pre($p,$titel="") {
 
 function fbads_init() {
     drupal_add_css(drupal_get_path('module', 'fbads') . '/fbads.css');
-	
-	fbads_get_access_token();
-	
-	// Initialize a new Session and instantiate an Api object
-	Api::init(
-	  variable_get('fbads_app_id'), // App ID
-	  variable_get('fbads_app_secret'),
-	  $_SESSION['facebook_access_token'] // Your user access token
-	  //variable_get('fbads_access_token')
-	);
-	
-	
+
+	if ($_SESSION['facebook_access_token']) {
+		
+		// Initialize a new Session and instantiate an Api object
+		Api::init(
+		  variable_get('fbads_app_id'), // App ID
+		  variable_get('fbads_app_secret'),
+		  $_SESSION['facebook_access_token'] // Your user access token
+		  //variable_get('fbads_access_token')
+		);
+	}
+
 }
 
 function fbads_permission() {
@@ -62,6 +72,13 @@ function fbads_menu() {
         'type' => MENU_CALLBACK,
     );
 	
+	$items['fbads/login'] = array(
+        'title' => t('Facebook Login'),
+        'access arguments' => array('access fbads'),
+        'page arguments' => array(0),  
+        'page callback' => 'fbads_login',
+    );
+	
     $items['fbads/tests'] = array(
         'title' => t('Tests'),
         'access arguments' => array('administer site configuration'),
@@ -69,20 +86,130 @@ function fbads_menu() {
         'page callback' => 'fbads_tests',
     );
 	
+	$items['fbads/target'] = array(
+        'title' => t('Facebook Targeting'),
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('fbads_target_form'),  
+        'access arguments' => array('access fbads'),
+    );
+	
+    $items['fbads/interestresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_interestresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/suggestionresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_interestsuggestionresults',
+        'type' => MENU_CALLBACK
+    );	
+
+    $items['fbads/countryresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_countryresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/regionsresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_regionsresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/cityresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_cityresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/zipresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_zipresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/educationresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_educationresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/majorresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_majorresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/employerresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_employerresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/positionresults'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_positionresults',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/category/%'] = array(
+        'access arguments' => array('access fbads'),
+        'page arguments' => array(2),
+        'page callback' => '_fbads_categorylist',
+        'type' => MENU_CALLBACK
+    );
+	
+    $items['fbads/interest/%'] = array(
+        'access arguments' => array('access fbads'),
+        'page arguments' => array(2),
+        'page callback' => '_fbads_interestlist',
+        'type' => MENU_CALLBACK
+    );
+	
 	return $items;
 }
 
-function fbads_tests(){
-		
-	$me = new AdUser('me');
-
-	//$my_adaccount = $me->getAdAccounts()->current();
-	//fbads_print_pre($my_adaccount->getData());
+function fbads_login() {
 	
-	$my_adaccount = $me->getAdAccounts([variable_get('fbads_ad_account')]);
-	fbads_print_pre($my_adaccount->getData());
+	fbads_print_pre($_SESSION);
 
-	return "test";
+	$fb = new Facebook(['app_id' => variable_get('fbads_app_id'), 'app_secret' => variable_get('fbads_app_secret'),]);
+	
+	$helper = $fb->getRedirectLoginHelper();
+	$output = "";
+		
+	if (!isset($_SESSION['facebook_access_token'])) {
+	  $_SESSION['facebook_access_token'] = null;
+	}
+	
+	if (!$_SESSION['facebook_access_token']) {
+	  $helper = $fb->getRedirectLoginHelper();
+	  try {
+	    $_SESSION['facebook_access_token'] = (string) $helper->getAccessToken();
+	  } catch(FacebookResponseException $e) {
+	    // When Graph returns an error
+	    drupal_set_message('Graph returned an error: ' . $e->getMessage(), 'error');
+		$output .= "Graph Error!";
+	    return $output;
+	  } catch(FacebookSDKException $e) {
+	    // When validation fails or other local issues
+	    drupal_set_message( 'Facebook SDK returned an error: ' . $e->getMessage(), 'error');
+		$output .= "Login Error!";
+	    return $output;
+	  }
+	}
+	
+	if ($_SESSION['facebook_access_token']) {
+		drupal_set_message(t('You are logged in.'));
+		$output .= "Login Ok";
+	} else {
+		$permissions = ['ads_management'];
+		$loginUrl = $helper->getLoginUrl('http://www.boucado.space/fbads/login', $permissions);
+		$output.='<a href="' . $loginUrl . '">Log in with Facebook</a>';
+	} 
+	
+	return $output;
 }
 
 function fbads_admin_config_form($form,&$form_state){
@@ -133,41 +260,814 @@ function fbads_admin_config_form_submit(&$form_state) {
 	drupal_set_message(t('Your configuration has been saved.'));
 }
 
-
-function fbads_get_access_token(){
-
-	$fb = new Facebook([
-	  'app_id' => variable_get('fbads_app_id'),
-	  'app_secret' => variable_get('fbads_app_secret'),]
-	);
+function fbads_getAdAccount(){
+		
+	$user = new AdUser('me');
+	$user->read(array(AdUserFields::ID));
 	
-	$helper = $fb->getRedirectLoginHelper();
+	$accounts = $user->getAdAccounts(array(
+	  AdAccountFields::ID,
+	  AdAccountFields::NAME,
+	));
 	
-	if (!isset($_SESSION['facebook_access_token'])) {
-	  $_SESSION['facebook_access_token'] = null;
+	// Print out the accounts
+	$output =  "Accounts:<br>";
+	$i = 0;
+	$j = 0;
+	foreach($accounts as $account) {
+		$output .= $account->id . ' - ' .$account->name."<br>";
+		if (strpos($account->id,variable_get('fbads_ad_account')) > 0) {
+			$j = $i;
+		}
+		$i++;
 	}
-	
-	if (!$_SESSION['facebook_access_token']) {
-	  $helper = $fb->getRedirectLoginHelper();
-	  try {
-	    $_SESSION['facebook_access_token'] = (string) $helper->getAccessToken();
-	  } catch(FacebookResponseException $e) {
-	    // When Graph returns an error
-	    drupal_set_message('Graph returned an error: ' . $e->getMessage(), 'error');
-	    return;
-	  } catch(FacebookSDKException $e) {
-	    // When validation fails or other local issues
-	    drupal_set_message( 'Facebook SDK returned an error: ' . $e->getMessage(), 'error');
-	    return;
-	  }
-	}
-	
-	if (!$_SESSION['facebook_access_token']) {
-	  $permissions = ['ads_management'];
-	  $loginUrl = $helper->getLoginUrl('http://www.boucado.space/', $permissions);
-	  echo '<a href="' . $loginUrl . '">Log in with Facebook</a>';
-	} 
 
+	// Grab the first account for next steps (you should probably choose one)
+	$account = (count($accounts)) ? $accounts->getObjects()[$j] : null;
+	$output .= "<br>Using this account: ";
+	$output .= $account->id."<br>";
+
+	return $account;
 }
 
+function fbads_newCampaign($account){
+	$campaign  = new Campaign(null, $account->id);
+	$campaign->setData(array(
+	  CampaignFields::NAME => 'My First Campaign',
+	  CampaignFields::OBJECTIVE => AdObjectives::LINK_CLICKS,
+	));
+	
+	$campaign->create(array(
+	  Campaign::STATUS_PARAM_NAME => Campaign::STATUS_PAUSED,
+	));
+	return $campaign;
+}
+
+function fbads_tests(){
+	$account = fbads_getAdAccount();
+	$campaign = fbads_newCampaign($account);
+	
+	$output = "<br>Campaign ID: ".$campaign->id."<br>";
+	
+	return $output;
+}
+
+function fbads_target_form($form,&$form_state){
+
+  $form['location_set'] = array(
+  	'#title' => t('Location'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => FALSE
+  );
+  
+  $form['location_set']['countries'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Country'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/countryresults',
+  );	
+  
+  $form['location_set']['regions'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Region'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/regionsresults',
+  );	
+  
+  $form['location_set']['cities'] = array(
+    '#type' => 'textfield',
+    '#title' => t('City'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/cityresults',
+  );
+  
+  $form['location_set']['zips'] = array(
+    '#type' => 'textfield',
+    '#title' => t('ZIP'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/zipresults',
+  );
+  
+  $form['location_set']['location_types'] = array(
+  	'#title' => t('Location type'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => array('recent' => t('recent'), 'home' => t('home'), 'travel_in' => t('travel in')),
+  	'#option_attributes' => array('recent' => array('title' => 'People whose most recent location is the selected area, as determined by information from their mobile device.'), 
+  									'home' => array('title' => 'People whose stated location from their Facebook profile “current city” is within that location. This is also validated by IP address and aggregated information from their friends’ stated profile locations.'), 
+  									'travel_in' => array('title' => 'People whose most recent location is the selected area, as determined by information from their mobile device, and are more than 100 miles away from their stated current city from their Facebook profiles.')),
+  );
+  
+  $form['gender_age_set'] = array(
+  	'#title' => t('Gender & Age'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  $form['gender_age_set']['gender'] = array(
+  	'#title' => t('Gender'),
+  	'#type' => 'radios',
+  	'#options' => array('0' => t('All'), '1' => t('male'), '2' => t('female')),
+  );
+  
+  $form['gender_age_set']['age_min'] = array(
+  	'#title' => t('min. Age'),
+  	'#type' => 'textfield',
+  	'#description' => t('13 - 65'),
+  );
+
+  $form['gender_age_set']['age_max'] = array(
+  	'#title' => t('max. Age'),
+  	'#type' => 'textfield',
+  	'#description' => t('13 - 65'),
+  );
+  
+  $form['interest_set'] = array(
+  	'#title' => t('Interests'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  $form['interest_set']['interest'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Interests'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/interestresults',
+  );
+  
+  $form['interest_set']['suggestion'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Interest suggestion'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/suggestionresults',
+  );
+  
+  $hierarchy = _fbads_interestlist('interests');
+
+  $form['interest_set']['interestcats'] = array(
+    '#type' => 'hierarchical_select',
+    '#title' => t('Interest categories'),
+    '#size' => 1,
+    '#config' => array(
+      'module' => 'hs_smallhierarchy',
+      'params' => array(
+        'hierarchy' => $hierarchy,
+        'id' => 'my-hierarchy-about-interests',
+        'separator' => '|',
+      ),
+      'save_lineage'    => 0,
+      'enforce_deepest' => 0,
+      'entity_count'    => 0,
+      'require_entity'    => 0,
+      'resizable'       => 1,
+      'level_labels' => array(
+        'status' => 0,
+        'labels' => array(
+          0 => t('Main category'),
+          1 => t('Subcategory'),
+          2 => t('Third level category'),
+        ),
+      ),
+      'dropbox' => array(
+        'status'   => 0,
+        'title'    => t('All selections'),
+        'limit'    => 0,
+        'reset_hs' => 1,
+      ),
+      'editability' => array(
+        'status'           => 0,
+        'item_types'       => array(),
+        'allowed_levels'   => array(
+          0 => 0,
+          1 => 0,
+          2 => 1,
+        ),
+        'allow_new_levels' => 0,
+        'max_levels'       => 3,
+      ),
+      // These settings cannot be configured through the UI: they can only be
+      // overridden through code.
+      'animation_delay'    => 100,
+      'exclusive_lineages' => array(),
+      'render_flat_select' => 0,
+    ),
+    //'#description' => 'Put your description here',
+    //'#default_value' => 'win|vista|x86',
+  );  
+  
+  $form['behaviors_set'] = array(
+  	'#title' => t('Behaviors'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+    
+  $hierarchy = _fbads_interestlist('behaviors');
+
+  $form['behaviors_set']['behaviors'] = array(
+    '#type' => 'hierarchical_select',
+    '#title' => t('Behaviors'),
+    '#size' => 1,
+    '#config' => array(
+      'module' => 'hs_smallhierarchy',
+      'params' => array(
+        'hierarchy' => $hierarchy,
+        'id' => 'my-hierarchy-about-behaviors',
+        'separator' => '|',
+      ),
+      'save_lineage'    => 0,
+      'enforce_deepest' => 0,
+      'entity_count'    => 0,
+      'require_entity'    => 0,
+      'resizable'       => 1,
+      'level_labels' => array(
+        'status' => 0,
+        'labels' => array(
+          0 => t('Main category'),
+          1 => t('Subcategory'),
+          2 => t('Third level category'),
+        ),
+      ),
+      'dropbox' => array(
+        'status'   => 0,
+        'title'    => t('All selections'),
+        'limit'    => 0,
+        'reset_hs' => 1,
+      ),
+      'editability' => array(
+        'status'           => 0,
+        'item_types'       => array(),
+        'allowed_levels'   => array(
+          0 => 0,
+          1 => 0,
+          2 => 1,
+        ),
+        'allow_new_levels' => 0,
+        'max_levels'       => 3,
+      ),
+      // These settings cannot be configured through the UI: they can only be
+      // overridden through code.
+      'animation_delay'    => 100,
+      'exclusive_lineages' => array(),
+      'render_flat_select' => 0,
+    ),
+    //'#description' => 'Put your description here',
+    //'#default_value' => 'win|vista|x86',
+  );
+  
+  
+  $form['education_set'] = array(
+  	'#title' => t('Education'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  $form['education_set']['education_statuses'] = array(
+  	'#title' => t('Education statuses'),
+  	'#type' => 'checkboxes',
+  	'#options' => array( 
+		'1' => 'High school',
+		'2' => 'Undergrad',
+		'3' => 'Alum',
+		'4' => 'High school grad',
+		'5' => 'Some college',
+		'6' => 'Associate degree',
+		'7' => 'In grad school',
+		'8' => 'Some grad school',
+		'9' => 'Master degree',
+		'10' => 'Professional degree',
+		'11' => 'Doctorate degree',
+		'12' => 'Unspecified',
+		'13' => 'Some high school')
+  );
+  
+  $form['education_set']['education_schools'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Schools'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/educationresults',
+  );
+  
+   $form['education_set']['education_majors'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Education Majors'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/majorresults',
+  );
+  
+  $form['work_set'] = array(
+  	'#title' => t('Work'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+   $form['work_set']['work_employers'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Employers'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/employerresults',
+  );
+  
+  $form['work_set']['work_positions'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Job Titles'),
+    '#maxlength' => 128,
+    '#autocomplete_path' => 'fbads/positionresults',
+  );
+  
+  $form['relationship_set'] = array(
+  	'#title' => t('Relationship'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  
+  $form['relationship_set']['relationship_statuses'] = array(
+  	'#title' => t('Relationship'),
+  	'#type' => 'checkboxes',
+  	'#options' => array(
+		'1' => 'single', '2' => 'in_relationship', '3' => 'married', '4' => 'engaged', '6' => 'not specified',
+		'7' => 'in a civil union', '8' => 'in a domestic partnership', '9' => 'In an open relationship',
+		'10' =>'Its complicated', '11' => 'Separated', '12' => 'Divorced', '13' => 'Widowed'
+	)
+  );
+  
+  $form['relationship_set']['interested_in'] = array(
+  	'#title' => t('Interested in'),
+  	'#type' => 'checkboxes',
+  	'#options' => array('1' => 'men', '2' => 'women', '3' => 'men and women', '4' => 'not specified'),
+  );
+  
+  $form['demographics_set'] = array(
+  	'#title' => t('Demographics'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  // life_events
+  $categories = _fbads_categorylist('life_events');
+  $options = array();
+  $option_attributes = array();
+  foreach ($categories as $row) {
+  	$options[$row['id']] = $row['label'];
+	$option_attributes[$row['id']] = array('title' => $row['description']);
+  }
+   
+  $form['demographics_set']['life_events'] = array(
+  	'#title' => t('Life events'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  	'#option_attributes' => $option_attributes,
+  );
+  
+  
+  // industries
+  $categories = _fbads_categorylist('industries');
+  $options = array();
+  $option_attributes = array();
+  foreach ($categories as $row) {
+  	$options[$row['id']] = $row['label'];
+	$option_attributes[$row['id']] = array('title' => $row['description']);
+  }
+   
+  $form['demographics_set']['industries'] = array(
+  	'#title' => t('Industries'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  	'#option_attributes' => $option_attributes,
+  );
+  
+  // ethnic_affinity
+  $categories = _fbads_categorylist('ethnic_affinity');
+  $options = array();
+  $option_attributes = array();
+  foreach ($categories as $row) {
+  	$options[$row['id']] = $row['label'];
+	$option_attributes[$row['id']] = array('title' => $row['description']);
+  }
+   
+  $form['demographics_set']['ethnic_affinity'] = array(
+  	'#title' => t('Ethnic affinity'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  	'#option_attributes' => $option_attributes,
+  );
+  
+  // generation
+  $categories = _fbads_categorylist('generation');
+  $options = array();
+  $option_attributes = array();
+  foreach ($categories as $row) {
+  	$options[$row['id']] = $row['label'];
+	$option_attributes[$row['id']] = array('title' => $row['description']);
+  }
+   
+  $form['demographics_set']['generation'] = array(
+  	'#title' => t('Generation'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  	'#option_attributes' => $option_attributes,
+  );
+  
+  // family_statuses
+  $categories = _fbads_categorylist('family_statuses');
+  $options = array();
+  $option_attributes = array();
+  foreach ($categories as $row) {
+  	$options[$row['id']] = $row['label'];
+	$option_attributes[$row['id']] = array('title' => $row['description']);
+  }
+   
+  $form['demographics_set']['family_statuses'] = array(
+  	'#title' => t('Family status'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  	'#option_attributes' => $option_attributes,
+  );
+  
+  $form['device_set'] = array(
+  	'#title' => t('Devices'),
+  	'#type' => 'fieldset',
+  	'#collapsible' => TRUE,
+  	'#collapsed' => TRUE
+  );
+  
+  
+  $form['device_set']['user_os'] = array(
+  	'#title' => t('User OS'),
+  	'#type' => 'checkboxes',
+  	'#options' => array('iOS' => 'iOS', 'Android' => 'Android')
+  );
+  
+  // user_device
+  $categories = _fbads_categorylist('user_device');
+  $options = array();
+  // fbads_print_pre($categories);
+  
+  foreach ($categories as $row) {
+  	$options[$row['label']] = $row['description'] . " (" . $row['platform'] . ")";
+  }
+   
+  $form['device_set']['user_device'] = array(
+  	'#title' => t('User device'),
+  	'#type' => 'select',
+  	'#multiple' => TRUE,
+  	'#options' => $options,
+  );
+  
+
+
+  $form['page_types'] = array(
+  	'#title' => t('Placement'),
+  	'#type' => 'checkboxes',
+  	'#options' => array('desktopfeed' => 'News Feed on Facebook Desktop',
+						'mobilefeed' => 'News Feed on Facebook Mobile',
+						'rightcolumn' => 'Right column on Facebook Desktop',
+						'instagramstream' => 'The stream of media on Instagram mobile app',
+						'mobileexternal' => 'Audience Network'
+						),
+  ); 
+  
+
+
+  $form['submit'] = array(
+  	'#type' => 'submit',
+  	'#submit' => array('fbads_target_form_submit'),
+  	'#value' => t('Submit'),
+  );
+  
+
+	$form['options']['reset'] = array(
+	  '#type' => 'submit',
+	  '#value' => t('Reset'),
+	  '#submit' => array('fbads_target_form_submit_reset'),
+	);
+
+  return $form;
+}
+
+function fbads_target_form_submit_reset($form, &$form_state) {
+  $form_state['rebuild'] = FALSE;
+}
+
+function fbads_target_form_submit($form, &$form_state){
+	fbads_print_pre($form_state['values']['behaviors']);
+	
+	$form_state['rebuild'] = TRUE;
+}
+	
+
+function _fbads_interestresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::INTEREST,
+	  $class = null,
+	  $query = $string,
+	  $limit = array('limit' => 15)
+	);
+	
+ //fbads_print_pre($results->getObjects());
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$cat = "";
+		$topic = "";
+		if (isset($results->getObjects()[$i]->disambiguation_category)) {$cat =  " / " . $results->getObjects()[$i]->disambiguation_category;}
+		if (isset($results->getObjects()[$i]->topic)) {$topic = " / " . $results->getObjects()[$i]->topic;}
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . " (" . number_format($results->getObjects()[$i]->audience_size,0,',','.') . ") " . $cat . $topic);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_interestsuggestionresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::INTEREST_SUGGESTION,
+	  $class = null,
+	  $query = null,
+	  $params = array('interest_list' => array($string), 'limit' => 15)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . " (" . number_format($results->getObjects()[$i]->audience_size,0,',','.') . ")");
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_interestvalidate($interestlist){ // <= array('japan','nix')
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::INTEREST_VALIDATE,
+	  $class = null,
+	  $query = null,
+	  $params = array('interest_list' => $interestlist)
+	);
+	
+	return $results;
+}
+
+function _fbads_countryresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::GEOLOCATION,
+	  $class = null,
+	  $query = $string,
+	  array('location_types' => array('country'),)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_regionsresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::GEOLOCATION,
+	  $class = null,
+	  $query = $string,
+	  array('location_types' => array('region'),)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . ", " . $results->getObjects()[$i]->country_code);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_cityresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::GEOLOCATION,
+	  $class = null,
+	  $query = $string,
+	  array('location_types' => array('city'),)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_zipresults($string){
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::GEOLOCATION,
+	  $class = null,
+	  $query = $string,
+	  array('location_types' => array('zip'),)
+	);
+	
+
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		if (isset($results->getObjects()[$i]->primary_city)) {
+			$city = $results->getObjects()[$i]->primary_city;
+		} else {
+			$city = $results->getObjects()[$i]->region;
+		}
+		$matches[$results->getObjects()[$i]->key] = check_plain($results->getObjects()[$i]->country_code . "-" . $results->getObjects()[$i]->name . " " . $city);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_educationresults($string){
+
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::EDUCATION,
+	  $class = null,
+	  $query = $string,
+	  $limit = array('limit' => 15)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_majorresults($string){
+
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::MAJOR,
+	  $class = null,
+	  $query = $string,
+	  $limit = array('limit' => 15)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_employerresults($string){
+
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::EMPLOYER,
+	  $class = null,
+	  $query = $string,
+	  $limit = array('limit' => 15)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_positionresults($string){
+
+	$results = TargetingSearch::search(
+	  $type = TargetingSearchTypes::POSITION,
+	  $class = null,
+	  $query = $string,
+	  $limit = array('limit' => 15)
+	);
+	
+	$matches = array();
+	
+	for ($i=0;$i < count($results);$i++) {
+		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
+	}
+
+	drupal_json_output($matches);
+}
+
+function _fbads_categorylist($category){
+	$result = TargetingSearch::search(
+  		TargetingSearchTypes::TARGETING_CATEGORY,
+  		$category);
+
+/*
+  `life_events`,
+  `politics`,
+  `industries`,
+  'markets',
+  `income`,
+  `net_worth`,
+  `home_type`,
+  `home_ownership`,
+  `ethnic_affinity`,
+  `generation`,
+  `household_composition`,
+  `moms`,
+  `office_type`,
+  `family_statuses`
+  'user_device'
+ */
+ 	
+ 	$options = array();
+	
+	foreach ($result->getObjects() as $key => $val) {
+		if (isset($val->id)) {$options[$key]['id'] = $val->id;}
+		$options[$key]['label'] = $val->name;
+		if (isset($val->description)) {$options[$key]['size'] = $val->audience_size;}
+		if (isset($val->description)) {$options[$key]['description'] = $val->description;}
+		if (isset($val->platform)) {$options[$key]['platform'] = $val->platform;}
+	}
+ 
+	// fbads_print_pre($options);
+	// fbads_print_pre($result->getObjects());
+	
+	return $options;	
+}
+
+function _fbads_interestlist($category){
+	$result = TargetingSearch::search(
+  		TargetingSearchTypes::TARGETING_CATEGORY,
+  		$category);
+
+/*
+  `interests`,
+  `bahaviors`,
+ */
+
+  $hierarchy = array(
+     'win' => array('label' => 'Windows',
+	       'children' => array(
+	         'xp'    => array('label' => 'XP'),
+	         'vista' => array('label' => 'Vista',
+		           'children' => array(
+		             'x86' => array('label' => '32-bits'),
+		             'x64' => array('label' => '64-bits'),
+		           ),
+	         ),
+	       ),
+     ),
+  );
+  	
+ 	$options = array();
+	
+	foreach ($result->getObjects() as $key => $val) {
+		//if (isset($val->id)) {$options[$key]['id'] = $val->id;}
+		$count = count($val->path);
+		if (!isset($options[$val->path[0]])) {
+			$options[$val->path[0]] = array('label' => $val->path[0]);
+		}
+		if ($count == 2) {
+			$options[$val->path[0]]['children'][$val->id."#".$val->path[1]] = array('label' => $val->path[1]);} 
+		
+		if ($count == 3) {
+			if (!isset($options[$val->path[0]]['children'][$val->path[1]])){
+				$options[$val->path[0]]['children'][$val->path[1]] = array('label' => $val->path[1]);
+			}
+			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]])) {
+				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->id."#".$val->path[2]] = array('label' => $val->path[2]);
+			} else {
+				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id."#".$val->path[2]] = array('label' => $val->path[2]);
+			}
+		}
+		if ($count == 4) {
+			if (!isset($options[$val->path[0]]['children'][$val->path[1]])){
+				$options[$val->path[0]]['children'][$val->path[1]] = array('label' => $val->path[1]);
+			}
+			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]])) {
+				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]] = array('label' => $val->path[2]);
+			}
+			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id])) {
+				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id."#".$val->path[3]] = array('label' => $val->path[3]);
+			}
+		}
+	}
+	
+	//fbads_print_pre($options);
+	//fbads_print_pre($hierarchy);
+	//fbads_print_pre($result->getObjects());
+	
+	return $options;	
+}
 
