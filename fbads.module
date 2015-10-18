@@ -29,6 +29,15 @@
 	// Targeting
 	use FacebookAds\Object\TargetingSearch;
 	use FacebookAds\Object\Search\TargetingSearchTypes;
+	use FacebookAds\Object\Fields\TargetingSpecsFields;
+	use FacebookAds\Object\TargetingSpecs;
+
+
+	$path = drupal_get_path('module', 'fbads');
+	drupal_add_css($path . "fbads.css");
+	
+	require_once('fbads_TargetingSearch.inc');
+	
 
 function fbads_print_pre($p,$titel="") {
 	if ($titel<>"") {print $titel . ": ";} 
@@ -40,7 +49,7 @@ function fbads_print_pre($p,$titel="") {
 function fbads_init() {
     drupal_add_css(drupal_get_path('module', 'fbads') . '/fbads.css');
 
-	if ($_SESSION['facebook_access_token']) {
+	if (isset($_SESSION['facebook_access_token'])) {
 		
 		// Initialize a new Session and instantiate an Api object
 		Api::init(
@@ -173,12 +182,17 @@ function fbads_menu() {
         'type' => MENU_CALLBACK
     );
 	
+    $items['fbads/addcountry'] = array(
+        'access arguments' => array('access fbads'),
+        'page callback' => '_fbads_addcountry',
+        'type' => MENU_CALLBACK
+    );	
 	return $items;
 }
 
 function fbads_login() {
 	
-	fbads_print_pre($_SESSION);
+	// fbads_print_pre($_SESSION);
 
 	$fb = new Facebook(['app_id' => variable_get('fbads_app_id'), 'app_secret' => variable_get('fbads_app_secret'),]);
 	
@@ -319,6 +333,24 @@ function fbads_tests(){
 }
 
 function fbads_target_form($form,&$form_state){
+	
+	if(!empty($form_state['storage'])) $values = $form_state['storage'];
+	
+	$path = drupal_get_path('module', 'fbads');
+	
+	$form['jquery.ui'] = array(
+		'#type' => 'hidden',
+		// Both the library and custom JavaScript code are added to the '#attached'
+	    // property of a renderable array.
+	    '#attached' => array(
+	      'library' => array(
+	        array('system', 'ui.autocomplete'),
+	      ),
+	      'js' => array(
+	        "$path/fbads.js",
+	      ),
+	    ),
+	);
 
   $form['location_set'] = array(
   	'#title' => t('Location'),
@@ -326,6 +358,21 @@ function fbads_target_form($form,&$form_state){
   	'#collapsible' => TRUE,
   	'#collapsed' => FALSE
   );
+  
+
+  $form['location_set']['countries_list'] = array(
+  	'#type' => 'checkboxes',
+  	'#options' => null,
+  	'#id' => 'countries_list'
+  );
+
+  $form['location_set']['location'] = array(
+	    '#type' => 'textfield',
+	    '#title' => 'Your Location (Country)',
+	    '#id' => 'country_autocomplete',
+	    '#attributes' => array('class' => array('ui-autocomplete-input')),
+  ); 
+    
   
   $form['location_set']['countries'] = array(
     '#type' => 'textfield',
@@ -353,6 +400,19 @@ function fbads_target_form($form,&$form_state){
     '#title' => t('ZIP'),
     '#maxlength' => 128,
     '#autocomplete_path' => 'fbads/zipresults',
+  );
+  
+    $form['location_set']['address_string'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Address'),
+    '#maxlength' => 128,
+  );
+  
+    $form['location_set']['radius'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Radius in km'),
+    '#description' => t('Must be between 1 and 80km'),
+    '#maxlength' => 128,
   );
   
   $form['location_set']['location_types'] = array(
@@ -387,7 +447,7 @@ function fbads_target_form($form,&$form_state){
   	'#collapsed' => TRUE
   );
   
-  $form['gender_age_set']['gender'] = array(
+  $form['gender_age_set']['genders'] = array(
   	'#title' => t('Gender'),
   	'#type' => 'radios',
   	'#options' => array('0' => t('All'), '1' => t('male'), '2' => t('female')),
@@ -413,13 +473,26 @@ function fbads_target_form($form,&$form_state){
   	'#collapsed' => TRUE
   );
   
-  $form['interest_set']['interest'] = array(
+  $form['interest_set']['interests_list'] = array(
+  	'#type' => 'checkboxes',
+  	'#options' => null,
+  	'#id' => 'interests_list'
+  );
+  
+  $form['interest_set']['interests'] = array(
     '#type' => 'textfield',
     '#title' => t('Interests'),
     '#maxlength' => 128,
+    '#id' => 'interests_autocomplete',
     '#autocomplete_path' => 'fbads/interestresults',
+    '#attributes' => array('class' => array('ui-autocomplete-input')),
   );
   
+	$form['interest_set']['test_interests'] = array(
+		'#type' => 'submit',
+		'#value' => 'Test interests',		
+	);
+	  
   $form['interest_set']['suggestion'] = array(
     '#type' => 'textfield',
     '#title' => t('Interest suggestion'),
@@ -763,15 +836,25 @@ function fbads_target_form($form,&$form_state){
 						),
   ); 
   
+	if (isset($form_state['storage']['reach'])) {
+		
+	$form['reach'] = array(
+		'#title' => t('Estimated reach:'),
+		'#markup' => "<div id='estimated_reach'>" . $form_state['storage']['reach'] . "</div>",
+	);
+	
+	}
 
+	$form['submit'] = array(
+	'#type' => 'submit',
+	'#value' => t('Submit'),
+	);
 
-  $form['submit'] = array(
-  	'#type' => 'submit',
-  	'#submit' => array('fbads_target_form_submit'),
-  	'#value' => t('Submit'),
-  );
-  
-
+	$form['reach_estimate'] = array(
+	'#type' => 'submit',
+	'#value' => t('Estimate reach'),
+	);
+	
 	$form['options']['reset'] = array(
 	  '#type' => 'submit',
 	  '#value' => t('Reset'),
@@ -785,327 +868,174 @@ function fbads_target_form_submit_reset($form, &$form_state) {
   $form_state['rebuild'] = FALSE;
 }
 
+function fbads_target_form_validate($form, &$form_state){
+	//fbads_print_pre($form_state['values']);
+
+}
+
 function fbads_target_form_submit($form, &$form_state){
-	fbads_print_pre($form_state['values']['behaviors']);
+	//fbads_print_pre($form_state['values']);
 	
 	$form_state['rebuild'] = TRUE;
-}
-	
-
-function _fbads_interestresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::INTEREST,
-	  $class = null,
-	  $query = $string,
-	  $limit = array('limit' => 15)
-	);
-	
- //fbads_print_pre($results->getObjects());
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$cat = "";
-		$topic = "";
-		if (isset($results->getObjects()[$i]->disambiguation_category)) {$cat =  " / " . $results->getObjects()[$i]->disambiguation_category;}
-		if (isset($results->getObjects()[$i]->topic)) {$topic = " / " . $results->getObjects()[$i]->topic;}
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . " (" . number_format($results->getObjects()[$i]->audience_size,0,',','.') . ") " . $cat . $topic);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_interestsuggestionresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::INTEREST_SUGGESTION,
-	  $class = null,
-	  $query = null,
-	  $params = array('interest_list' => array($string), 'limit' => 15)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . " (" . number_format($results->getObjects()[$i]->audience_size,0,',','.') . ")");
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_interestvalidate($interestlist){ // <= array('japan','nix')
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::INTEREST_VALIDATE,
-	  $class = null,
-	  $query = null,
-	  $params = array('interest_list' => $interestlist)
-	);
-	
-	return $results;
-}
-
-function _fbads_countryresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::GEOLOCATION,
-	  $class = null,
-	  $query = $string,
-	  array('location_types' => array('country'),)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_regionsresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::GEOLOCATION,
-	  $class = null,
-	  $query = $string,
-	  array('location_types' => array('region'),)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name . ", " . $results->getObjects()[$i]->country_code);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_cityresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::GEOLOCATION,
-	  $class = null,
-	  $query = $string,
-	  array('location_types' => array('city'),)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_zipresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::GEOLOCATION,
-	  $class = null,
-	  $query = $string,
-	  array('location_types' => array('zip'),)
-	);
-	
-
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		if (isset($results->getObjects()[$i]->primary_city)) {
-			$city = $results->getObjects()[$i]->primary_city;
-		} else {
-			$city = $results->getObjects()[$i]->region;
-		}
-		$matches[$results->getObjects()[$i]->key] = check_plain($results->getObjects()[$i]->country_code . "-" . $results->getObjects()[$i]->name . " " . $city);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_localesresults($string){
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::LOCALE,
-	  $class = null,
-	  $query = $string
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_educationresults($string){
-
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::EDUCATION,
-	  $class = null,
-	  $query = $string,
-	  $limit = array('limit' => 15)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_majorresults($string){
-
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::MAJOR,
-	  $class = null,
-	  $query = $string,
-	  $limit = array('limit' => 15)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_employerresults($string){
-
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::EMPLOYER,
-	  $class = null,
-	  $query = $string,
-	  $limit = array('limit' => 15)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_positionresults($string){
-
-	$results = TargetingSearch::search(
-	  $type = TargetingSearchTypes::POSITION,
-	  $class = null,
-	  $query = $string,
-	  $limit = array('limit' => 15)
-	);
-	
-	$matches = array();
-	
-	for ($i=0;$i < count($results);$i++) {
-		$matches[$results->getObjects()[$i]->name] = check_plain($results->getObjects()[$i]->name);
-	}
-
-	drupal_json_output($matches);
-}
-
-function _fbads_categorylist($category){
-	$result = TargetingSearch::search(
-  		TargetingSearchTypes::TARGETING_CATEGORY,
-  		$category);
-
-/*
-  `life_events`,
-  `politics`,
-  `industries`,
-  'markets',
-  `income`,
-  `net_worth`,
-  `home_type`,
-  `home_ownership`,
-  `ethnic_affinity`,
-  `generation`,
-  `household_composition`,
-  `moms`,
-  `office_type`,
-  `family_statuses`
-  'user_device'
- */
- 	
- 	$options = array();
-	
-	foreach ($result->getObjects() as $key => $val) {
-		if (isset($val->id)) {$options[$key]['id'] = $val->id;}
-		$options[$key]['label'] = $val->name;
-		if (isset($val->description)) {$options[$key]['size'] = $val->audience_size;}
-		if (isset($val->description)) {$options[$key]['description'] = $val->description;}
-		if (isset($val->platform)) {$options[$key]['platform'] = $val->platform;}
-	}
- 
-	// fbads_print_pre($options);
-	// fbads_print_pre($result->getObjects());
-	
-	return $options;	
-}
-
-function _fbads_interestlist($category){
-	$result = TargetingSearch::search(
-  		TargetingSearchTypes::TARGETING_CATEGORY,
-  		$category);
-
-/*
-  `interests`,
-  `bahaviors`,
- */
-
-  $hierarchy = array(
-     'win' => array('label' => 'Windows',
-	       'children' => array(
-	         'xp'    => array('label' => 'XP'),
-	         'vista' => array('label' => 'Vista',
-		           'children' => array(
-		             'x86' => array('label' => '32-bits'),
-		             'x64' => array('label' => '64-bits'),
-		           ),
-	         ),
-	       ),
-     ),
-  );
-  	
- 	$options = array();
-	
-	foreach ($result->getObjects() as $key => $val) {
-		//if (isset($val->id)) {$options[$key]['id'] = $val->id;}
-		$count = count($val->path);
-		if (!isset($options[$val->path[0]])) {
-			$options[$val->path[0]] = array('label' => $val->path[0]);
-		}
-		if ($count == 2) {
-			$options[$val->path[0]]['children'][$val->id."#".$val->path[1]] = array('label' => $val->path[1]);} 
 		
-		if ($count == 3) {
-			if (!isset($options[$val->path[0]]['children'][$val->path[1]])){
-				$options[$val->path[0]]['children'][$val->path[1]] = array('label' => $val->path[1]);
-			}
-			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]])) {
-				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->id."#".$val->path[2]] = array('label' => $val->path[2]);
-			} else {
-				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id."#".$val->path[2]] = array('label' => $val->path[2]);
-			}
+	$interestlist = array_map('trim', explode(',', $form_state['values']['interests']));
+	$interests = _fbads_interestvalidate($interestlist);	
+	
+	if($form_state['values']['op'] == 'Test interests'){
+		$newinterests = "";
+		foreach ($interests as $row) {
+			$newinterests .= $row->name . ", ";
 		}
-		if ($count == 4) {
-			if (!isset($options[$val->path[0]]['children'][$val->path[1]])){
-				$options[$val->path[0]]['children'][$val->path[1]] = array('label' => $val->path[1]);
-			}
-			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]])) {
-				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]] = array('label' => $val->path[2]);
-			}
-			if (!isset($options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id])) {
-				$options[$val->path[0]]['children'][$val->path[1]]['children'][$val->path[2]]['children'][$val->id."#".$val->path[3]] = array('label' => $val->path[3]);
-			}
-		}
+		 //form_set_value($form['interest_set']['interests'], substr($newinterests,0,strlen($newinterests)-2), $form_state);
+		 $form['interest_set']['interests']['#value']= $newinterests;
+		 //$form_state['storage']['interests'] = $newinterests;
+		 //fbads_print_pre($form_state);
+	}
+
+	$targeting = array();
+	
+	$targeting['geo_locations'] = array('countries' => array_map('trim', explode(',', $form_state['values']['countries'])));
+	if (isset($form_state['values']['age_min'])) $targeting['age_min'] = $form_state['values']['age_min'];
+	if (isset($form_state['values']['age_max'])) $targeting['age_max'] = $form_state['values']['age_max'];
+	if (isset($form_state['values']['genders'])) $targeting['genders'] = array($form_state['values']['genders']);
+	
+	//fbads_print_pre(json_encode($targeting));
+
+	if($form_state['values']['op'] == 'Estimate reach'){
+		$reach = _fbads_reach_estimate($targeting);
+		$form_state['storage']['reach'] = number_format($reach->data->users,0,',','.');
+		// fbads_print_pre($reach->data->users);
 	}
 	
-	//fbads_print_pre($options);
-	//fbads_print_pre($hierarchy);
-	//fbads_print_pre($result->getObjects());
+	/*
+	$params = array('targeting_spec' => array($targeting));
+	$descriptions = $account->getTargetingDescription(array(), $params)->{TargetingDescriptionFields::TARGETING_SENTENCE_LINES};
+	fbads_print_pre($descriptions);
+	 */
 	
-	return $options;	
+  
+/*	
+    [countries] => 
+    [regions] => 
+    [cities] => 
+    [zips] => 
+    [location_types] => Array
+        (
+        )
+
+    [locales] => 
+    [gender] => 
+    [age_min] => 
+    [age_max] => 
+    [interest] => 
+    [suggestion] => 
+    [interestcats] => Array
+        (
+            [0] => 
+        )
+
+    [behaviors] => Array
+        (
+            [0] => 
+        )
+
+    [education_statuses] => Array
+        (
+            [1] => 0
+            [2] => 0
+            [3] => 0
+            [4] => 0
+            [5] => 0
+            [6] => 0
+            [7] => 0
+            [8] => 0
+            [9] => 0
+            [10] => 0
+            [11] => 0
+            [12] => 0
+            [13] => 0
+        )
+
+    [education_schools] => 
+    [education_majors] => 
+    [work_employers] => 
+    [work_positions] => 
+    [relationship_statuses] => Array
+        (
+            [1] => 0
+            [2] => 0
+            [3] => 0
+            [4] => 0
+            [6] => 0
+            [7] => 0
+            [8] => 0
+            [9] => 0
+            [10] => 0
+            [11] => 0
+            [12] => 0
+            [13] => 0
+        )
+
+    [interested_in] => Array
+        (
+            [1] => 0
+            [2] => 0
+            [3] => 0
+            [4] => 0
+        )
+
+    [life_events] => Array
+        (
+        )
+
+    [industries] => Array
+        (
+        )
+
+    [ethnic_affinity] => Array
+        (
+        )
+
+    [generation] => Array
+        (
+        )
+
+    [family_statuses] => Array
+        (
+        )
+
+    [user_os] => Array
+        (
+            [iOS] => 0
+            [Android] => 0
+        )
+
+    [user_device] => Array
+        (
+        )
+
+    [page_types] => Array
+        (
+            [desktopfeed] => 0
+            [mobilefeed] => 0
+            [rightcolumn] => 0
+            [instagramstream] => 0
+            [mobileexternal] => 0
+        )
+	*/
+}
+	
+
+function _fbads_addcountry(){
+		
+		$country = $_GET['country'];
+		$code = $_GET['code'];
+		
+		watchdog('ajax', $country . " " . $code);
+		drupal_json_output("Country " . $country . " " . $code . " added.");
 }
 
+
+function _fbads_ajax_country(){
+	watchdog('ajax','test country');
+}
