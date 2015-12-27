@@ -16,14 +16,29 @@ Drupal.behaviors.fbadsBehavior = {
 		select: function(event, ui){
 			console.log(ui);
 			$("#country_autocomplete").val(ui.item.name);
-			$("#countries_list").val($("#edit-countries").val()+","+ui.item.code);
+//			$("#countries_list").val($("#edit-countries").val()+","+ui.item.code);
 //			$('<input />').attr({type: 'checkbox',id: 'foo',name: 'countries_list',value: ui.item.code}).appendTo($('#countries_list'));
 			
+			// Länderliste im hidden Feld field_country_code speichern:
+			var $oldCountries = $("#field_country_code").val();
+			var $newCountries = {};
+			if ($oldCountries != "") {
+				var $newCountries = JSON.parse($oldCountries);
+			} else {
+				var $newCountries = {};
+			}
+
+			$newCountries[ui.item.code+"|"+ui.item.name] = ui.item.name;
+			$("#field_country_code").val(JSON.stringify($newCountries));
+			
+			/*
 			var $label = $("<label>").text(ui.item.name);
 			var $input = $('<input type="text">').attr({type: 'checkbox', name: 'countries_list',value: ui.item.code});
 			$input.appendTo($label);
 			$('#countries_list').append($label);
+			*/
 			
+			/*
 			$.ajax({
 			  url: "/fbads/addcountry",
 			  data: { code: ui.item.code, location: ui.item.name }
@@ -31,6 +46,7 @@ Drupal.behaviors.fbadsBehavior = {
 			  .done(function( msg ) {
 			    alert( "Data Saved: " + msg );
 			  });
+			  */
 		},
 		minLength:1,
 	};

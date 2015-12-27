@@ -338,6 +338,7 @@ function fbads_target_form($form,&$form_state){
 	
 	$path = drupal_get_path('module', 'fbads');
 	
+	$form['#tree'] = TRUE;
 	$form['jquery.ui'] = array(
 		'#type' => 'hidden',
 		// Both the library and custom JavaScript code are added to the '#attached'
@@ -356,21 +357,58 @@ function fbads_target_form($form,&$form_state){
   	'#title' => t('Location'),
   	'#type' => 'fieldset',
   	'#collapsible' => TRUE,
-  	'#collapsed' => FALSE
+  	'#collapsed' => FALSE,	
   );
   
-
-  $form['location_set']['countries_list'] = array(
-  	'#type' => 'checkboxes',
-  	'#options' => null,
-  	'#id' => 'countries_list'
+  $form['location_set']['countries_checkboxes_fieldset'] = array(
+    '#title' => t("Selected countries"),
+    '#prefix' => '<div id="countries-checkboxes-wrapper">',
+    '#suffix' => '</div>',
+    '#type' => 'fieldset',
   );
 
+  if (isset($form_state['storage']['field_country_code'])) {
+  		$countries = $form_state['storage']['field_country_code'];
+  } else {
+  		$countries = "";
+  }
+  
+  $form['location_set']['field_country_code'] = array(
+  	'#type' => 'textfield',
+  	'#attributes' => array('id' => 'field_country_code'),
+  	'#value' => $countries,
+    '#prefix' => '<div id="field-country-code-wrapper">',
+    '#suffix' => '</div>',    	
+  );
+  
+  
+  $options = "";
+  if (isset($form_state['input']['location_set']['location'])) {
+	$options = $form_state['input']['location_set']['field_country_code'];
+  } elseif (isset($form_state['storage']['field_country_code'])) {
+  	$options = $form_state['storage']['field_country_code'];
+  }
+  
+  $form['location_set']['countries_checkboxes_fieldset']['cbx_countries'] = array(
+    '#type' => 'checkboxes',
+    '#options' => json_decode($options,TRUE),
+    '#ajax' => array(
+		'callback' => '_fbads_ajax_deletecountry',
+		'wrapper' => 'field-country-code-wrapper',
+		'parameters'=>array('param1'=>'delete'),
+	),
+  );
+  
   $form['location_set']['location'] = array(
 	    '#type' => 'textfield',
 	    '#title' => 'Your Location (Country)',
 	    '#id' => 'country_autocomplete',
 	    '#attributes' => array('class' => array('ui-autocomplete-input')),
+	    '#ajax' => array(
+			'callback' => '_fbads_ajax_country',
+			'wrapper' => 'countries-checkboxes-wrapper',
+			'parameters'=>array('param1'=>'param1_vale','param2'=>'param2_vale','param3'=>'param3_vale'),
+		),
   ); 
     
   
@@ -381,6 +419,7 @@ function fbads_target_form($form,&$form_state){
     '#autocomplete_path' => 'fbads/countryresults',
   );	
   
+/*  
   $form['location_set']['regions'] = array(
     '#type' => 'textfield',
     '#title' => t('Region'),
@@ -627,8 +666,8 @@ function fbads_target_form($form,&$form_state){
   	'#type' => 'checkboxes',
   	'#options' => array( 
 		'1' => 'High school',
-		'2' => 'Undergrad',
-		'3' => 'Alum',
+		'2' => 'In collete',
+		'3' => 'College grad',
 		'4' => 'High school grad',
 		'5' => 'Some college',
 		'6' => 'Associate degree',
@@ -844,12 +883,12 @@ function fbads_target_form($form,&$form_state){
 	);
 	
 	}
-
+*/
 	$form['submit'] = array(
 	'#type' => 'submit',
 	'#value' => t('Submit'),
 	);
-
+/*
 	$form['reach_estimate'] = array(
 	'#type' => 'submit',
 	'#value' => t('Estimate reach'),
@@ -860,7 +899,7 @@ function fbads_target_form($form,&$form_state){
 	  '#value' => t('Reset'),
 	  '#submit' => array('fbads_target_form_submit_reset'),
 	);
-
+*/
   return $form;
 }
 
@@ -874,10 +913,11 @@ function fbads_target_form_validate($form, &$form_state){
 }
 
 function fbads_target_form_submit($form, &$form_state){
-	//fbads_print_pre($form_state['values']);
 	
 	$form_state['rebuild'] = TRUE;
-		
+	$form_state['storage']['field_country_code'] = $form_state['input']['location_set']['field_country_code'];
+	// fbads_print_pre($form_state['values']['location_set']);
+	/*
 	$interestlist = array_map('trim', explode(',', $form_state['values']['interests']));
 	$interests = _fbads_interestvalidate($interestlist);	
 	
@@ -1030,12 +1070,41 @@ function _fbads_addcountry(){
 		
 		$country = $_GET['country'];
 		$code = $_GET['code'];
-		
-		watchdog('ajax', $country . " " . $code);
 		drupal_json_output("Country " . $country . " " . $code . " added.");
 }
 
 
-function _fbads_ajax_country(){
-	watchdog('ajax','test country');
+function _fbads_ajax_country(&$form, &$form_state){
+	return $form['location_set']['countries_checkboxes_fieldset'];
+}
+
+function _fbads_ajax_deletecountry(&$form, &$form_state){
+	//fbads_print_pre($form['location_set']);
+	if ($form_state['triggering_element']['#type'] == 'checkbox') {
+		$toDelete = $form_state['triggering_element']['#return_value'];
+		$countries_list = $form_state['input']['location_set']['field_country_code'];
+		
+		$temp = json_decode($countries_list,true);
+		unset($temp[$toDelete]);
+		$new = json_encode($temp);
+		if (strlen($new) < 3) $new="";
+		
+		unset($form['location_set']['countries_checkboxes_fieldset']['cbx_countries']);
+	  $form['location_set']['countries_checkboxes_fieldset']['cbx_countries'] = array(
+	    '#type' => 'checkboxes',
+	    '#options' => $temp,
+	    '#ajax' => array(
+			'callback' => '_fbads_ajax_deletecountry',
+			'wrapper' => 'field-country-code-wrapper',
+			'parameters'=>array('param1'=>'delete'),
+		),
+	  );		
+		
+		//unset($form['location_set']['field_country_code']);
+		
+		$form['location_set']['field_country_code']['#value'] = $new;
+		
+	}
+	
+	return $form['location_set']['field_country_code'];
 }
